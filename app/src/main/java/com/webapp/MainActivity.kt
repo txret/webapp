@@ -1,37 +1,46 @@
 package com.webapp
-import android.os.Bundle
-import androidx.activity.ComponentActivity
+
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.pm.PackageManager
-import android.view.WindowInsets
+import android.os.Bundle
 import android.webkit.CookieManager
+import android.webkit.GeolocationPermissions
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.core.app.ActivityCompat
+import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+
+import android.annotation.SuppressLint
 
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
-    companion object {
-        const val LOCATION_PERMISSION_REQUEST_CODE = 1
-    }
+    private var locationRequestOrigin: String? = null
+    private var locationRequestCallback: GeolocationPermissions.Callback? = null
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Make the WebView full screen by hiding the navigation bar
-        window.insetsController?.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-
         webView = findViewById(R.id.webview)
-        webView.settings.javaScriptEnabled = true // Enable JavaScript
+        @SuppressLint("SetJavaScriptEnabled")
+        webView.settings.javaScriptEnabled = true
+        webView.settings.allowContentAccess = true
+        webView.settings.domStorageEnabled = true
+        webView.settings.useWideViewPort = true
         webView.settings.setGeolocationEnabled(true)
-        webView.settings.setUserAgentString("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36");
+        webView.settings.userAgentString =
+            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36"
+
+        // keep all clicked URLs in the webview
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
                 request?.let {
                     view?.loadUrl(it.url.toString())
                 }
@@ -39,47 +48,45 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // required for location permission request
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String?,
+                callback: GeolocationPermissions.Callback?
+            ) {
+                super.onGeolocationPermissionsShowPrompt(origin, callback)
+                locationRequestOrigin = null
+                locationRequestCallback = null
+                if (ContextCompat.checkSelfPermission(
+                        this@MainActivity,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    locationRequestOrigin = origin
+                    locationRequestCallback = callback
+                    requestLocationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                } else {
+                    callback?.invoke(origin, true, false)
+                }
+            }
+        }
 
-        // Enable cookies
+        // enable cookies
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
-        webView.loadUrl(getString(R.string.app_url)) // URL defined in strings.xml
 
-        // Check if location permissions are already granted
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // Request location permissions
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                ),
-                LOCATION_PERMISSION_REQUEST_CODE
-            )
-        }
-
+        // load URL
+        webView.loadUrl(getString(R.string.app_url))
     }
 
-    @Deprecated("Deprecated in Java")
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
-            if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
-                // Permissions granted - you can initiate location-based functionality
+    // request location permission
+    private val requestLocationPermissionLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (isGranted) {
+                locationRequestCallback?.invoke(locationRequestOrigin, true, false)
             } else {
-                // Permissions denied - handle as appropriate
+                locationRequestCallback?.invoke(locationRequestOrigin, false, false)
             }
         }
-    }
-
-    // Override back press to navigate back in WebView
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
-        }
-    }
 }
