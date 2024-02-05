@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
         }
 
         wv.webViewClient = object : WebViewClient() {
-            // keep new URLs in webview
+            // keep navigation inside the webview (don't open the browser)
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 request: WebResourceRequest?
@@ -53,13 +53,14 @@ class MainActivity : ComponentActivity() {
                 return true
             }
 
-            // inject credential management
+            // inject credential management on every page load
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 credentialsAutofill()
             }
         }
 
+        // geolocation management
         wv.webChromeClient = object : WebChromeClient() {
             override fun onGeolocationPermissionsShowPrompt(
                 origin: String?,
@@ -70,6 +71,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // javascript clientside interface to app for saving username/password
         wv.addJavascriptInterface(object : Any() {
             @JavascriptInterface
             fun saveUserName(username: String) {
@@ -81,7 +83,7 @@ class MainActivity : ComponentActivity() {
             }
         }, "Android")
 
-
+        // allow cookies
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(wv, true)
@@ -114,13 +116,12 @@ class MainActivity : ComponentActivity() {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // credentials management
+
+    // create/retrieve encryption MasterKey and initialize encrypted shared preferences
     private fun initEncryptedSharedPreferences(): SharedPreferences {
-        // Create or retrieve the MasterKey for encryption/decryption
         val masterKey = MasterKey.Builder(applicationContext)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
-
-        // Initialize EncryptedSharedPreferences
         return EncryptedSharedPreferences.create(
             applicationContext,
             "encrypted_prefs",
@@ -130,12 +131,10 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    // called on each load
+    // listen for username/password change and autofill where possible (called on each load)
     private fun credentialsAutofill() {
         val user = sharedPreferences.getString("username", "")
         val pass = sharedPreferences.getString("password", "")
-
-        // Listen for form submission and update credentials if changed
         val js = """
             const user_fld = document.querySelector("input[name='username'],input[id='username'],input[autofill='username'],input[name='user'],input[id='user'],input[autofill='user']")
             const pass_fld = document.querySelector("input[name*='password'],input[id*='password'],input[autofill*='password']")
